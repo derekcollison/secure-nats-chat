@@ -1,4 +1,4 @@
-// Copyright 2015 Derek Collison All rights reserved.
+// Copyright(c) 2015 Derek Collison (derek.collison@gmail.com)
 
 package main
 
@@ -6,11 +6,9 @@ import (
 	"bufio"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	"crypto/sha256"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -20,7 +18,7 @@ import (
 )
 
 func usage() {
-	log.Fatalf("Usage: nats-chat <subject> <key> \n")
+	log.Fatalf("Usage: nats-chat <subject> <key>\n")
 }
 
 const (
@@ -32,7 +30,9 @@ const (
 var name, subj, key string
 var keyHash []byte
 
-// Cipher block
+// Cipher
+var gcm cipher.AEAD
+var nonce []byte
 var block cipher.Block
 
 func main() {
@@ -55,7 +55,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("Can't create cipher: %v\n", err)
 	}
+	gcm, err = cipher.NewGCMWithNonceSize(block, sha256.Size)
+	if err != nil {
+		log.Fatalf("Can't create gcm: %v\n", err)
+	}
 
+	// Generate the nonce
+	h.Write([]byte(subj))
+	h.Write(keyHash)
+	nonce = h.Sum(nil)
+
+	// Connect securely to NATS
 	nc, err := nats.SecureConnect(natsUrl)
 	if err != nil {
 		log.Fatalf("Got an error on Connect with Secure Options: %+v\n", err)
@@ -75,9 +85,11 @@ func main() {
 	go func() {
 		for range c {
 			fmt.Printf("\n\n")
-			exit := &natsChat{Name: name, Msg: encrypt("<left>\n")}
-			ec.Publish(subj, exit)
-			ec.Flush()
+			if name != "" {
+				exit := &natsChat{Name: name, Msg: encrypt("<left>\n")}
+				ec.Publish(subj, exit)
+				ec.Flush()
+			}
 			os.Exit(0)
 		}
 	}()
@@ -113,20 +125,13 @@ func main() {
 
 func encrypt(msg string) []byte {
 	plaintext := []byte(msg)
-	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
-	iv := ciphertext[:aes.BlockSize]
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		log.Fatalf("Can't read crypto/rand: %v\n", err)
-	}
-	stream := cipher.NewCTR(block, iv)
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
-	return ciphertext
+	return gcm.Seal(nil, nonce, plaintext, nil)
 }
 
 func decrypt(ciphertext []byte) string {
-	iv := ciphertext[:aes.BlockSize]
-	plaintext := make([]byte, len(ciphertext))
-	stream := cipher.NewCTR(block, iv)
-	stream.XORKeyStream(plaintext, ciphertext[aes.BlockSize:])
-	return string(plaintext)
+	v, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "<unable to decrypt, wrong key?>\n"
+	}
+	return string(v)
 }
