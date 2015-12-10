@@ -7,6 +7,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha256"
+	"crypto/tls"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"log"
@@ -17,14 +19,17 @@ import (
 	"github.com/nats-io/nats"
 )
 
+const (
+	AppName    = "nats_chat"
+	Version    = "0.3"
+	Proto      = "1"
+	ServerName = "demo.nats.io"
+	NatsUrl    = "nats://demo.nats.io:4443"
+)
+
 func usage() {
 	log.Fatalf("Usage: nats-chat <subject> <key>\n")
 }
-
-const (
-	natsUrl    = "nats://demo.nats.io:4443"
-	serverName = "demo.nats.io"
-)
 
 // Hold name, key and subject
 var name, subj, key string
@@ -36,8 +41,8 @@ var nonce []byte
 
 // Messages we send
 type chat struct {
-	Name string
-	Msg  []byte
+	Name string `json:"name"`
+	Msg  string `json:"encrypted_msg"`
 }
 
 func main() {
@@ -49,7 +54,10 @@ func main() {
 	if len(args) < 1 {
 		usage()
 	}
+
 	subj, key = args[0], args[1]
+	subj = fmt.Sprintf("snats.%s.%s", Proto, subj)
+
 	h := sha256.New()
 	h.Write([]byte(key))
 	keyHash = h.Sum(nil)
@@ -71,12 +79,20 @@ func main() {
 	nonce = h.Sum(nil)
 
 	// Connect securely to NATS
-	nc, err := nats.SecureConnect(natsUrl)
+	opts := nats.DefaultOptions
+	opts.Name = AppName
+	opts.Url = NatsUrl
+	opts.Secure = true
+	opts.TLSConfig = &tls.Config{
+		ServerName: ServerName,
+	}
+
+	nc, err := opts.Connect()
 	if err != nil {
 		log.Fatalf("Got an error on Connect with Secure Options: %+v\n", err)
 	}
-	log.Printf("Securely connected to %s", natsUrl)
-	ec, _ := nats.NewEncodedConn(nc, nats.GOB_ENCODER)
+	log.Printf("Securely connected to %s", NatsUrl)
+	ec, _ := nats.NewEncodedConn(nc, nats.JSON_ENCODER)
 
 	// Setup signal handlers to signal leaving.
 	c := make(chan os.Signal, 1)
@@ -123,13 +139,15 @@ func main() {
 	runtime.Goexit()
 }
 
-func encrypt(msg string) []byte {
+func encrypt(msg string) string {
 	plaintext := []byte(msg)
-	return gcm.Seal(nil, nonce, plaintext, []byte(name))
+	ciphertext := gcm.Seal(nil, nonce, plaintext, []byte(name))
+	return base64.StdEncoding.EncodeToString(ciphertext)
 }
 
 func decrypt(msg *chat) string {
-	v, err := gcm.Open(nil, nonce, msg.Msg, []byte(msg.Name))
+	data, _ := base64.StdEncoding.DecodeString(msg.Msg)
+	v, err := gcm.Open(nil, nonce, data, []byte(msg.Name))
 	if err != nil {
 		return "<unable to decrypt, wrong key?>\n"
 	}
