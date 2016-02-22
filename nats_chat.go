@@ -1,4 +1,4 @@
-// Copyright(c) 2015 Derek Collison (derek.collison@gmail.com)
+// Copyright(c) 2016 Derek Collison (derek.collison@gmail.com)
 
 package main
 
@@ -7,7 +7,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -20,11 +19,11 @@ import (
 )
 
 const (
-	AppName    = "nats_chat"
-	Version    = "0.3"
-	Proto      = "1"
-	ServerName = "demo.nats.io"
-	NatsUrl    = "nats://demo.nats.io:4443"
+	AppName       = "nats_chat"
+	Version       = "0.3"
+	Proto         = "1"
+	ServerName    = "demo.nats.io"
+	SecureNatsUrl = "tls://demo.nats.io:4443"
 )
 
 func usage() {
@@ -79,19 +78,12 @@ func main() {
 	nonce = h.Sum(nil)
 
 	// Connect securely to NATS
-	opts := nats.DefaultOptions
-	opts.Name = AppName
-	opts.Url = NatsUrl
-	opts.Secure = true
-	opts.TLSConfig = &tls.Config{
-		ServerName: ServerName,
-	}
+	nc, err := nats.Connect(SecureNatsUrl, nats.Name(AppName))
 
-	nc, err := opts.Connect()
 	if err != nil {
 		log.Fatalf("Got an error on Connect with Secure Options: %+v\n", err)
 	}
-	log.Printf("Securely connected to %s", NatsUrl)
+	log.Printf("Securely connected to %s", SecureNatsUrl)
 	ec, _ := nats.NewEncodedConn(nc, nats.JSON_ENCODER)
 
 	// Setup signal handlers to signal leaving.
