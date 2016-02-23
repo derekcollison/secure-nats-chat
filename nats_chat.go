@@ -79,10 +79,10 @@ func main() {
 
 	// Connect securely to NATS
 	nc, err := nats.Connect(SecureNatsUrl, nats.Name(AppName))
-
 	if err != nil {
 		log.Fatalf("Got an error on Connect with Secure Options: %+v\n", err)
 	}
+
 	log.Printf("Securely connected to %s", SecureNatsUrl)
 	ec, _ := nats.NewEncodedConn(nc, nats.JSON_ENCODER)
 
