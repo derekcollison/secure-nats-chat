@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	AppName       = "nats_chat"
-	Version       = "0.3"
+	AppName       = "secure-nats-chat"
+	Version       = "0.4"
 	Proto         = "1"
 	ServerName    = "demo.nats.io"
 	SecureNatsUrl = "tls://demo.nats.io:4443"
